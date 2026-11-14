@@ -10,8 +10,8 @@ import { db } from "@/lib/server/db";
  */
 export async function resetDatabase(): Promise<void> {
   await db.$executeRaw`
-    TRUNCATE TABLE "user", "Movie", "UserFavoriteMovie", "MovieFact",
-      "FactDelivery", "FactGenerationLease" CASCADE`;
+    TRUNCATE TABLE "user", "session", "account", "verification",
+      "Movie", "UserFavoriteMovie", "MovieFact", "FactDelivery", "FactGenerationLease" CASCADE`;
 }
 
 /** Inserts a minimal user row and returns its id. */
