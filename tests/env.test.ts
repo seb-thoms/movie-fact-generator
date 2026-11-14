@@ -20,6 +20,22 @@ describe("parseEnv", () => {
     expect(env.OPENAI_MODEL).toBeUndefined();
   });
 
+  it("defaults NODE_ENV to development", () => {
+    expect(parseEnv(validEnv).NODE_ENV).toBe("development");
+  });
+
+  it("rejects a malformed DATABASE_URL", () => {
+    expect(() => parseEnv({ ...validEnv, DATABASE_URL: "not a url" })).toThrow(/DATABASE_URL/);
+  });
+
+  it.each(["0", "-1", "2.5", "abc"])("rejects FACT_POOL_SIZE=%s", (value) => {
+    expect(() => parseEnv({ ...validEnv, FACT_POOL_SIZE: value })).toThrow(/FACT_POOL_SIZE/);
+  });
+
+  it("rejects an empty OPENAI_MODEL instead of silently treating it as unset", () => {
+    expect(() => parseEnv({ ...validEnv, OPENAI_MODEL: "" })).toThrow(/OPENAI_MODEL/);
+  });
+
   it("coerces FACT_POOL_SIZE from a string", () => {
     expect(parseEnv({ ...validEnv, FACT_POOL_SIZE: "25" }).FACT_POOL_SIZE).toBe(25);
   });

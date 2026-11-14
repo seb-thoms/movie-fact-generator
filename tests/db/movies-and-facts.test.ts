@@ -25,6 +25,15 @@ describe("Movie", () => {
     expect(movie.statusUpdatedAt).toBeNull();
   });
 
+  it("rejects an unknown status at the database level (Postgres enum)", async () => {
+    // Raw SQL bypasses Prisma's TypeScript types, so only the DB enum can stop it.
+    const insertBogusStatus = db.$executeRaw`
+      INSERT INTO "Movie" ("id", "title", "normalizedTitle", "releaseYear", "status")
+      VALUES ('m1', 'Dune', 'dune', 2021, ${"BOGUS"}::"MovieStatus")`;
+
+    await expect(insertBogusStatus).rejects.toThrow(/invalid input value for enum/i);
+  });
+
   it("lets the database set createdAt (Prisma sends no app-server timestamp)", async () => {
     const columns = await capturedInsertColumns("Movie", (client) =>
       client.movie.create({ data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 } }),
