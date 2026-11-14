@@ -1,8 +1,12 @@
 // Data model: SPEC §3. Auth models come from the Better Auth CLI (SPEC §3.2).
 // Rules: every timestamp is @db.Timestamptz(3); time comparisons use the DB clock.
-// App timestamps use @default(dbgenerated("now()")), not @default(now()): with
-// now(), Prisma Client sends the app server's time on insert (verified in
-// tests/db/movies-and-facts.test.ts), so the DB clock would not be the source.
+//
+// App timestamps use @default(dbgenerated("transaction_timestamp()")):
+// - Not @default(now()): Prisma Client then sends the app server's time on
+//   insert (verified in tests/db/movies-and-facts.test.ts).
+// - Not dbgenerated("now()"): Prisma reads a DB default of now() back as
+//   @default(now()), so every future migration would re-emit SET DEFAULT.
+// transaction_timestamp() is Postgres's standard name for the same value as now().
 
 generator client {
   provider = "prisma-client"
@@ -28,7 +32,9 @@ model User {
   updatedAt     DateTime @updatedAt @db.Timestamptz(3)
 
   // App relations (SPEC §3.2): navigation fields only, not columns.
-  favorites UserFavoriteMovie[]
+  favorites  UserFavoriteMovie[]
+  deliveries FactDelivery[]
+  leases     FactGenerationLease[]
 
   @@unique([email])
   @@map("user")
@@ -45,10 +51,11 @@ model Movie {
   releaseYear     Int
   status          MovieStatus @default(PENDING)
   statusUpdatedAt DateTime?   @db.Timestamptz(3)
-  createdAt       DateTime    @default(dbgenerated("now()")) @db.Timestamptz(3)
+  createdAt       DateTime    @default(dbgenerated("transaction_timestamp()")) @db.Timestamptz(3)
 
   favorites UserFavoriteMovie[]
   facts     MovieFact[]
+  leases    FactGenerationLease[]
 
   @@unique([normalizedTitle, releaseYear])
 }
@@ -62,7 +69,7 @@ enum MovieStatus {
 model UserFavoriteMovie {
   userId    String
   movieId   String
-  createdAt DateTime @default(dbgenerated("now()")) @db.Timestamptz(3)
+  createdAt DateTime @default(dbgenerated("transaction_timestamp()")) @db.Timestamptz(3)
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   movie Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
@@ -76,10 +83,38 @@ model MovieFact {
   movieId   String
   content   String
   model     String // OpenAI model that produced it
-  createdAt DateTime @default(dbgenerated("now()")) @db.Timestamptz(3)
+  createdAt DateTime @default(dbgenerated("transaction_timestamp()")) @db.Timestamptz(3)
 
-  movie Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  movie      Movie          @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  deliveries FactDelivery[]
 
-  @@unique([id, movieId]) // target of FactDelivery's composite foreign key (commit 3)
+  @@unique([id, movieId]) // target of FactDelivery's composite foreign key
   @@index([movieId, createdAt(sort: Desc)])
+}
+
+model FactDelivery {
+  id          String   @id @default(cuid())
+  userId      String
+  movieId     String // denormalized for a single-index "latest for user + movie" lookup
+  movieFactId String
+  deliveredAt DateTime @default(dbgenerated("transaction_timestamp()")) @db.Timestamptz(3)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Composite FK: the database guarantees movieId matches the fact's movieId.
+  movieFact MovieFact @relation(fields: [movieFactId, movieId], references: [id, movieId], onDelete: Restrict)
+
+  @@index([userId, movieId, deliveredAt(sort: Desc)]) // latest fact for user + movie
+  @@index([movieFactId, userId]) // has this user seen this fact?
+}
+
+model FactGenerationLease {
+  userId      String
+  movieId     String
+  holderId    String // random id of the request holding the lease
+  lockedUntil DateTime @db.Timestamptz(3)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@id([userId, movieId])
 }

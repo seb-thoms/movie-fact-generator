@@ -1,16 +1,9 @@
-import { PrismaPg } from "@prisma/adapter-pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { PrismaClient } from "@/generated/prisma/client";
-
-import { createUser, db, resetDatabase } from "../helpers/db";
+import { capturedInsertColumns, createMovie, createUser, db, resetDatabase } from "../helpers/db";
 
 beforeEach(resetDatabase);
 afterAll(() => db.$disconnect());
-
-function createMovie(normalizedTitle: string, releaseYear: number) {
-  return db.movie.create({ data: { title: normalizedTitle, normalizedTitle, releaseYear } });
-}
 
 describe("Movie", () => {
   it("allows only one row per (normalizedTitle, releaseYear)", async () => {
@@ -33,27 +26,12 @@ describe("Movie", () => {
   });
 
   it("lets the database set createdAt (Prisma sends no app-server timestamp)", async () => {
-    // A separate client with query logging, so we can see the exact INSERT.
-    const logged = new PrismaClient({
-      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-      log: [{ emit: "event", level: "query" }],
-    });
-    const queries: string[] = [];
-    logged.$on("query", (event) => queries.push(event.query));
+    const columns = await capturedInsertColumns("Movie", (client) =>
+      client.movie.create({ data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 } }),
+    );
 
-    try {
-      await logged.movie.create({
-        data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 },
-      });
-    } finally {
-      await logged.$disconnect();
-    }
-
-    const insert = queries.find((query) => query.startsWith('INSERT INTO "public"."Movie"'));
-    // Only the column list matters: RETURNING legitimately reads createdAt back.
-    const insertedColumns = insert?.split(" VALUES ")[0];
-    expect(insertedColumns).toBeDefined();
-    expect(insertedColumns).not.toContain('"createdAt"');
+    expect(columns).toBeDefined();
+    expect(columns).not.toContain('"createdAt"');
   });
 });
 
