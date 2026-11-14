@@ -1,0 +1,15 @@
+#!/bin/sh
+# Blocks the commit unless every check passes (CLAUDE.md: "before every commit").
+# Enabled by `npm install` (the "prepare" script sets core.hooksPath).
+# Requires local Postgres to be running, since tests use the real test database.
+set -e
+
+echo "pre-commit: applying migrations to the test database..."
+npm run --silent db:test:prepare > /dev/null
+
+echo "pre-commit: typecheck, lint, tests..."
+npm run --silent typecheck
+npm run --silent lint
+npm test --silent
+
+echo "pre-commit: all checks passed."

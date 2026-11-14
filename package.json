@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",
     "db:test:prepare": "PRISMA_USE_TEST_DB=1 prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

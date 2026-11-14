@@ -14,6 +14,7 @@ Movie Memory is a take-home exercise: the Base implementation plus Variant A (ba
 - **Stay inside SPEC.md.** Don't add features, endpoints, fields, or dependencies that aren't in SPEC.md. If something is ambiguous, conflicts with SPEC.md, or seems wrong, stop and ask. Don't guess.
 - **Ask before adding any npm dependency.** Pin exact versions.
 - **Verify APIs against current docs or installed type definitions, not memory.** This applies especially to Better Auth, Prisma, Next.js, and the OpenAI SDK, which change often. Say so when you're unsure.
+- **Before every commit** (not just at the end of a step), all tests written so far must pass, along with typecheck and lint. The `.githooks/pre-commit` hook enforces this (enabled by `npm install`). Never bypass it with `--no-verify`.
 - **End each step with all of the following:**
   - Run `npm run typecheck`, `npm run lint`, and `npm test`, and fix any failures.
   - Summarize what changed and why.
