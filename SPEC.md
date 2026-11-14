@@ -148,6 +148,7 @@ Notes:
 
 - **Composite foreign key.** `FactDelivery.movieId` duplicates `MovieFact.movieId` for query speed. The composite foreign key `(movieFactId, movieId) → MovieFact(id, movieId)` makes the database guarantee they always match.
 - **Timestamps.** Confirm in the generated migration SQL that `@default(now())` becomes a database default and that Prisma Client does not send app-server timestamps on insert. If it does, switch to `@default(dbgenerated("now()"))`.
+  - **Verified (Prisma 7.10):** with `@default(now())`, Prisma Client *does* send the app server's time on insert. All application-table timestamps (`createdAt`, `deliveredAt`) therefore use `@default(dbgenerated("now()"))`. A test checks the actual INSERT SQL.
 - **Relation fields** (`favorites`, `facts`, etc.) are Prisma navigation fields, not database columns.
 - **`Movie.status`** is set only by the fact flow (§7.2 step 7), never at onboarding. Status changes are monotonic toward `VERIFIED`:
   - A valid `found: true` result may move `PENDING` or `NOT_RECOGNIZED` to `VERIFIED`. A real fact is stronger evidence than a "not recognized".

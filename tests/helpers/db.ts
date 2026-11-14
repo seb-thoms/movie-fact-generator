@@ -6,7 +6,13 @@ import { db } from "@/lib/server/db";
  * CASCADE also clears rows in tables that reference these ones.
  */
 export async function resetDatabase(): Promise<void> {
-  await db.$executeRaw`TRUNCATE TABLE "user" CASCADE`;
+  await db.$executeRaw`TRUNCATE TABLE "user", "Movie", "UserFavoriteMovie", "MovieFact" CASCADE`;
 }
 
 export { db };
+
+/** Inserts a minimal user row and returns its id. */
+export async function createUser(id: string): Promise<string> {
+  await db.user.create({ data: { id, name: id, email: `${id}@example.com` } });
+  return id;
+}

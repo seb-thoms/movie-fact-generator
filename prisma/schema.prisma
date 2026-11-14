@@ -1,5 +1,8 @@
 // Data model: SPEC §3. Auth models come from the Better Auth CLI (SPEC §3.2).
 // Rules: every timestamp is @db.Timestamptz(3); time comparisons use the DB clock.
+// App timestamps use @default(dbgenerated("now()")), not @default(now()): with
+// now(), Prisma Client sends the app server's time on insert (verified in
+// tests/db/movies-and-facts.test.ts), so the DB clock would not be the source.
 
 generator client {
   provider = "prisma-client"
@@ -24,6 +27,59 @@ model User {
   createdAt     DateTime @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @db.Timestamptz(3)
 
+  // App relations (SPEC §3.2): navigation fields only, not columns.
+  favorites UserFavoriteMovie[]
+
   @@unique([email])
   @@map("user")
+}
+
+// ---------------------------------------------------------------------------
+// Application models (SPEC §3.3)
+// ---------------------------------------------------------------------------
+
+model Movie {
+  id              String      @id @default(cuid())
+  title           String // display form, as first entered (trimmed, whitespace collapsed)
+  normalizedTitle String // see SPEC §4.1
+  releaseYear     Int
+  status          MovieStatus @default(PENDING)
+  statusUpdatedAt DateTime?   @db.Timestamptz(3)
+  createdAt       DateTime    @default(dbgenerated("now()")) @db.Timestamptz(3)
+
+  favorites UserFavoriteMovie[]
+  facts     MovieFact[]
+
+  @@unique([normalizedTitle, releaseYear])
+}
+
+enum MovieStatus {
+  PENDING // saved, not yet checked by the model
+  VERIFIED // the model recognized it and produced a fact
+  NOT_RECOGNIZED // the model did not recognize this title + year
+}
+
+model UserFavoriteMovie {
+  userId    String
+  movieId   String
+  createdAt DateTime @default(dbgenerated("now()")) @db.Timestamptz(3)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
+
+  @@id([userId, movieId])
+  @@unique([userId]) // TEMPORARY: one favorite per user. Drop to allow many.
+}
+
+model MovieFact {
+  id        String   @id @default(cuid())
+  movieId   String
+  content   String
+  model     String // OpenAI model that produced it
+  createdAt DateTime @default(dbgenerated("now()")) @db.Timestamptz(3)
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Restrict)
+
+  @@unique([id, movieId]) // target of FactDelivery's composite foreign key (commit 3)
+  @@index([movieId, createdAt(sort: Desc)])
 }
