@@ -19,7 +19,7 @@ Movie Memory is a take-home exercise: the Base implementation plus Variant A (ba
   - Summarize what changed and why.
   - Update `LEARNING_NOTES.md` (below).
   - Propose a commit message (Conventional Commits). Commit only after approval.
-- **Write tests alongside the code they cover,** not at the end.
+- **Test-driven development.** Each step's plan opens with the list of tests to write. For each behavior: write a test named after the SPEC rule, run it and confirm it fails for the right reason, write the minimum code to pass, then refactor with tests green. Where TDD doesn't fit (the real Google OAuth round-trip, the live OpenAI call, UI without component-test tooling), test what we own and verify the rest manually. Every commit still passes `npm test`; the test-first order is recorded in `LEARNING_NOTES.md`.
 
 ## Notes file
 
