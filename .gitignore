@@ -43,3 +43,6 @@ next-env.d.ts
 
 # private learning journal (never commit)
 LEARNING_NOTES.md
+
+# generated Prisma client (rebuilt by `prisma generate` on install and build)
+/src/generated/
