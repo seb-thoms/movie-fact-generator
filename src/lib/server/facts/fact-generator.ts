@@ -1,11 +1,11 @@
 import "server-only";
 
 /**
- * What a fact source needs: only the movie's display title and release year
- * (SPEC §8: no personal data ever goes to the model), plus an AbortSignal that
+ * What a fact source needs: only the movie's display title and release year,
+ * which may be null when not given (SPEC §8: no personal data ever goes to the model), plus an AbortSignal that
  * carries the overall generation deadline.
  */
-export type FactRequest = { title: string; releaseYear: number; signal: AbortSignal };
+export type FactRequest = { title: string; releaseYear: number | null; signal: AbortSignal };
 
 /**
  * `found: false` means the model didn't recognize a film with that title and

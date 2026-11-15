@@ -83,6 +83,25 @@ describe("addFavoriteMovie (SPEC §9)", () => {
     expect(await db.userFavoriteMovie.count()).toBe(1);
   });
 
+  it("saves a movie without a year as releaseYear null", async () => {
+    const userId = await createUser("u1");
+
+    const result = await addFavoriteMovie(userId, { title: "Dune", releaseYear: null });
+
+    expect(result.movie).toMatchObject({ title: "Dune", releaseYear: null, status: "PENDING" });
+  });
+
+  it("treats a no-year retry as the same movie, and a dated one as different", async () => {
+    const userId = await createUser("u1");
+    const first = await addFavoriteMovie(userId, { title: "Dune", releaseYear: null });
+
+    const retry = await addFavoriteMovie(userId, { title: "dune", releaseYear: null });
+    const dated = addFavoriteMovie(userId, dune);
+
+    expect(retry).toEqual({ created: false, movie: first.movie });
+    await expect(dated).rejects.toMatchObject({ code: "FAVORITE_EXISTS" });
+  });
+
   it("isn't blocked by another user's favorite", async () => {
     const alice = await createUser("alice");
     const bob = await createUser("bob");
@@ -196,5 +215,20 @@ describe("addFavoriteMovie losing a race (deterministic)", () => {
     expect(results.every((r) => r.status === "fulfilled" && r.value.created)).toBe(true);
     expect(await db.movie.count()).toBe(1);
     expect(await db.userFavoriteMovie.count()).toBe(2);
+  });
+
+  it("creators of the same no-year movie never fail (the partial index is a conflict too)", async () => {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+    const noYear = { title: "Dune", releaseYear: null };
+
+    const results = await raceAgainstUncommitted(
+      (tx) => tx.movie.create({ data: { title: "Dune", normalizedTitle: "dune" } }),
+      () => [addFavoriteMovie(alice, noYear), addFavoriteMovie(bob, noYear)],
+      2,
+    );
+
+    expect(results.every((r) => r.status === "fulfilled" && r.value.created)).toBe(true);
+    expect(await db.movie.count()).toBe(1);
   });
 });

@@ -92,6 +92,20 @@ describe("OpenAI FactGenerator: the request", () => {
     expect(client.responseCalls[0]?.signal).toBe(signal);
   });
 
+  it("sends a null year through to the prompt", async () => {
+    const client = new StubModelClient().willRespond(foundResponse());
+
+    await setup(client).generate({
+      title: "Dune",
+      releaseYear: null,
+      signal: new AbortController().signal,
+    });
+
+    expect(client.responseCalls[0]?.params).toMatchObject({
+      input: buildFactPrompt("Dune", null).input,
+    });
+  });
+
   it("caps output at about 150 tokens (SPEC §8)", () => {
     expect(MAX_OUTPUT_TOKENS).toBe(150);
   });

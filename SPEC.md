@@ -8,7 +8,8 @@ This is the source of truth for what the app does and how. CLAUDE.md says how to
 
 - **Base implementation** (required) + **Variant A** (backend: caching and correctness).
 - **Additions beyond the brief:**
-  - Movie release year.
+  - Movie release year (optional).
+  - Editing the favorite movie (`PUT /api/me/favorite-movie`).
   - Movie recognition status, learned from the fact call ("we couldn't find facts about that movie"). No verification at onboarding.
   - Autocomplete for existing movies.
   - Shared fact pool behind `FACT_STRATEGY`.
@@ -40,7 +41,7 @@ Why Better Auth: Auth.js / NextAuth is in maintenance mode (security patches onl
 
 ### 3.1 Principles
 
-- **Movies are shared.** One row per real movie, identified by normalized title + release year.
+- **Movies are shared.** One row per real movie, identified by normalized title + release year. The year is optional: a title with no year is its own row (at most one per title).
 - **Fact content belongs to a movie** (`MovieFact`). It contains no personal data and can be shared across users.
 - **Fact history belongs to a user** (`FactDelivery`): who was shown which fact, and when.
 - **The database clock is the single source of time.** All timestamps are `timestamptz`. All freshness comparisons use Postgres `now()` in SQL, never the app server's or the client's clock.
@@ -73,7 +74,7 @@ model Movie {
   id              String    @id @default(cuid())
   title           String                       // display form, as first entered (trimmed, whitespace collapsed)
   normalizedTitle String                       // see §4.1
-  releaseYear     Int
+  releaseYear     Int?                          // null = year not given
   status          MovieStatus @default(PENDING)
   statusUpdatedAt DateTime?   @db.Timestamptz(3)
   createdAt       DateTime    @default(now()) @db.Timestamptz(3)
@@ -83,6 +84,9 @@ model Movie {
   leases    FactGenerationLease[]
 
   @@unique([normalizedTitle, releaseYear])
+  // Postgres treats NULLs as distinct in the unique above, so a separate partial
+  // index allows only one no-year row per title (Prisma preview: partialIndexes).
+  @@unique([normalizedTitle], map: "Movie_normalizedTitle_no_year_key", where: { releaseYear: null })
 }
 
 enum MovieStatus {
@@ -183,7 +187,7 @@ The display `title` is only trimmed with whitespace collapsed. When a movie alre
   - 1–100 characters.
   - No control characters (Unicode `Cc`), and no invisible format characters (Unicode `Cf`: right-to-left overrides, zero-width spaces). Titles appear in other users' autocomplete, so text that displays differently from what it contains is rejected.
   - Must be non-empty after normalization.
-- **`releaseYear`:** integer, 1888 ≤ year ≤ (current year + 2). Required.
+- **`releaseYear`:** optional (missing or `null` means "not given"). When given: integer, 1888 ≤ year ≤ (current year + 2).
 - **Search `q`:** 1–100 characters raw, and at least 2 characters after normalization.
 - **Delete confirmation:** body must be exactly `{ "confirm": "delete" }`.
 
@@ -195,16 +199,14 @@ Validation failures return `422 VALIDATION_ERROR` with field-level details. The 
 
 - **`/`:**
   - Unauthenticated: landing page with "Sign in with Google".
-  - Authenticated: redirect based on onboarding state.
-- **After Google sign-in:**
-  - No favorite → `/onboarding`.
-  - Has a favorite → `/dashboard`.
+  - Authenticated: redirect to `/dashboard`.
+- **After Google sign-in:** always `/dashboard`.
 - **`/onboarding`:**
   - Requires a session.
-  - Redirects to `/dashboard` if a favorite already exists.
+  - The movie page: set a favorite for the first time, or edit it. Reachable from the dashboard at any time.
 - **`/dashboard`:**
   - Requires a session; otherwise redirect to `/`.
-  - Redirects to `/onboarding` if there is no favorite.
+  - Renders with or without a favorite (§11).
 
 **Two layers of checks (defense in depth):**
 
@@ -242,22 +244,22 @@ Validation errors may add `"details": { "fieldErrors": { ... } }`. Messages are 
 ```json
 {
   "user": { "id": "…", "name": "…", "email": "…", "image": "… | null" },
-  "favoriteMovies": [{ "id": "…", "title": "Dune", "releaseYear": 2021, "status": "VERIFIED" }]
+  "favoriteMovies": [{ "id": "…", "title": "Dune", "releaseYear": 2021, "status": "VERIFIED" }]  // releaseYear may be null
 }
 ```
 
 ### `GET /api/movies/search?q=du`
 
-`200 { "movies": [{ "id", "title", "releaseYear" }] }`
+`200 { "movies": [{ "id", "title", "releaseYear" }] }` (`releaseYear` may be `null`)
 
 - At most 8 results.
 - **`VERIFIED` movies only.**
-- Titles that start with the query come first, then titles that contain it; ties are ordered alphabetically.
+- Titles that start with the query come first, then titles that contain it; ties are ordered alphabetically, then by year (no-year last).
 - `422` on an invalid `q`.
 
 ### `POST /api/me/favorite-movies`
 
-Body: `{ "title": string, "releaseYear": number }`
+Body: `{ "title": string, "releaseYear"?: number | null }`
 
 | Status | Code | When |
 |---|---|---|
@@ -302,7 +304,17 @@ Body: `{ "confirm": "delete" }`
 | 204 | — | User and all personal data deleted; all sessions gone |
 | 400 | `BAD_CONFIRMATION` | Confirmation missing or wrong |
 
-No `PUT` or `PATCH` endpoints exist: editing a favorite is out of scope.
+### `PUT /api/me/favorite-movie`
+
+Sets the user's favorite, whether or not one exists (set or edit). Body: same as `POST`.
+
+| Status | Code | When |
+|---|---|---|
+| 201 | — | No favorite existed; it was set → `{ "movie": { id, title, releaseYear, status } }` |
+| 200 | — | The favorite was replaced, or was already this movie |
+| 422 | `VALIDATION_ERROR` | Invalid input |
+
+Flow: see §9.1. `POST` stays create-only (`409` for a different movie) for API clients; the app's form uses `PUT`.
 
 ---
 
@@ -393,7 +405,7 @@ If the user is deleted while their generation is in flight, the delivery insert 
 
 - **Location.** All OpenAI code lives in `lib/server/openai/`, which starts with `import "server-only"`. The prompt text is never sent to the client, and responses contain only the fact text.
 - **Assume the prompt can leak.** It contains no secrets. Security comes from the layers below, not from hiding the prompt.
-- **Inputs to the model:** the movie's display title and release year only. **No personal data is ever sent.** The user's name is added at display time on our side.
+- **Inputs to the model:** the movie's display title and release year only (the year may be `null`; the model is then told to use the best-known film with that title). **No personal data is ever sent.** The user's name is added at display time on our side.
 - **Model:** set by `OPENAI_MODEL`, defaulting to a current small, inexpensive model (choose it at build time from the current OpenAI docs).
 - **Call settings:**
   - Overall deadline of 12 s via `AbortSignal`.
@@ -426,37 +438,49 @@ If the user is deleted while their generation is in flight, the delivery insert 
 5. **No OpenAI call and no verification at onboarding.** Onboarding is fast and works even when OpenAI is down. Whether the movie is recognized is learned later, from the first fact request (§7.2 step 7).
 6. **Concurrent double-submit:** the unique constraints guarantee at most one favorite; the losing insert maps to the idempotent `200` or the `409`.
 
-Even if the movie is already `NOT_RECOGNIZED` (another user entered it earlier), onboarding links it normally. The dashboard then shows the not-recognized message. Users are never asked to change their favorite.
+Even if the movie is already `NOT_RECOGNIZED` (another user entered it earlier), onboarding links it normally. The dashboard then shows the not-recognized message, and the user can edit their favorite (§9.1).
+
+### 9.1 Setting or editing (`PUT /api/me/favorite-movie`)
+
+1. `requireUser()`; validate the body (§4.2).
+2. In one transaction:
+   - Lock the user's row (`SELECT … FOR UPDATE`), so concurrent edits by the same user run one at a time and the last one wins.
+   - Find or create the movie exactly as in §9 step 3.
+   - Replace the favorite: delete the user's favorite if it's a different movie, then insert the new link if missing.
+3. `201` if the user had no favorite, else `200`. Fact history (`FactDelivery`) for the old movie is kept; facts are per movie, so the new movie gets its own facts.
 
 ---
 
-## 10. Autocomplete (onboarding form)
+## 10. Movie page and autocomplete (`/onboarding`)
 
 - **When requests fire:** calls `GET /api/movies/search` after at least 2 typed characters, debounced ~250 ms.
 - **Suggestions:** `VERIFIED` movies only, at most 8. `PENDING` and `NOT_RECOGNIZED` titles are never suggested. Selecting one fills both title and year.
-- **Free entry:** the user can always ignore the suggestions and type any title and year.
-- **One submit path:** the form always submits `{ title, releaseYear }`; the server resolves it (§9). There is no separate "submit by movie id" path.
+- **Free entry:** the user can always ignore the suggestions and type any title, with or without a year.
+- **Fields:** title (required) and release year (optional). When editing, both are pre-filled with the current favorite; a Cancel link goes back to the dashboard.
+- **Saving:** the form uses `PUT /api/me/favorite-movie`, then goes to `/dashboard`.
+- **One submit path:** the form always submits `{ title, releaseYear }` (year may be `null`); the server resolves it (§9). There is no separate "submit by movie id" path.
 - **Accessibility:** the accessible combobox pattern (`role="combobox"`, listbox, `aria-activedescendant`), with arrow keys, Enter, and Escape.
 - **Query safety:** use Prisma `startsWith` / `contains` (parameterized) on `normalizedTitle`. Normalization already strips `%` and `_`; confirm Prisma's wildcard handling regardless.
   - **Verified (Prisma 7.10):** Prisma does **not** escape `%` or `_` in `startsWith` / `contains`; they reach SQL `LIKE` as wildcards. Values are still parameterized (no SQL injection), but normalization is the only thing preventing wildcard matching, so search must always query with the normalized term. Tests cover both facts.
 - **Not handled now:** offensive or spammy titles (see §17).
-- **Sign out:** the onboarding page also has a sign-out button (like the dashboard's logout), so a user who hasn't picked a favorite can still leave.
+- **Sign out:** the movie page also has a sign-out button (like the dashboard's).
 
 ---
 
 ## 11. Dashboard
 
 - **Server-rendered immediately:**
-  - The user's name (or the email-prefix fallback) and email.
-  - Photo, or an initials avatar.
-  - Favorite movie as "Title (Year)".
-  - Logout button.
-- **Greeting:** "Hey {first name}, here's a fact about *Title*", composed on our side.
+  - "Hey {name}" (or the email-prefix fallback), the email, and the photo or an initials avatar.
+  - Sign-out button.
+- **With a favorite:**
+  - "Your favourite movie is: *Title (Year)*" (just *Title* when there's no year), with an **Edit** link to the movie page.
+  - "Here's a fun fact:" followed by the fact panel.
+- **Without a favorite:** "No favourite movie set" and a **Set movie** button linking to the movie page.
 - **Fact panel:** a client component that calls `GET /api/movies/:movieId/fact`, with distinct states for:
   - Loading.
   - Success.
   - Stale fallback (a subtle "couldn't fetch a new fact, showing an earlier one").
-  - Not recognized: "We couldn't find any facts about *Title (Year)*." This is shown calmly, as information rather than an error. There's no retry button and no prompt to change the favorite.
+  - Not recognized: "We couldn't find any facts about *Title (Year)*." This is shown calmly, as information rather than an error. There's no retry button; the Edit link lets the user pick a different movie.
   - Unavailable (friendly message + retry button).
 - **Danger zone:** "Delete account" opens a confirmation where the user must type `delete`. It calls `DELETE /api/me`, then redirects to `/`.
 
@@ -526,6 +550,8 @@ Required coverage:
    - Onboarding never calls the generator; a new movie is saved as `PENDING`.
    - An existing movie keeps its status.
    - A same-movie retry → 200; a different movie → 409.
+   - A movie without a year is saved with `releaseYear = null`; only one no-year row per title can exist.
+   - `PUT` sets (201), replaces (200, old history kept), and is a no-op for the same movie (200); concurrent edits by one user leave exactly one favorite (the last committed).
 8. **Movie status:**
    - `PENDING` + `found: false` → `NOT_RECOGNIZED` and 422.
    - `PENDING` + `found: true` → `VERIFIED`.
@@ -599,7 +625,7 @@ The README contains:
   - **Verify the title when the user enters it at onboarding**, against a real movie database. IMDb has no free official API, so the likely options are TMDB or OMDb (check their current terms and limits). This would also add external ids for disambiguation, and would let onboarding reject unknown titles instead of saving them as `PENDING`.
   - Moderation of user-entered titles, since titles appear in other users' autocomplete.
   - Fuzzy autocomplete with `pg_trgm` (widely supported by hosted Postgres providers).
-  - Editing favorites, and multiple favorites (drop the temporary unique constraint).
+  - Multiple favorites (drop the temporary unique constraint).
 - **Accounts:** soft delete with a grace period and a purge job (GDPR-aware production pattern).
 - **Hardening:**
   - Rate limiting (search and fact endpoints).

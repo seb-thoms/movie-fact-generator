@@ -19,7 +19,7 @@ export function notFound(): FactResult {
  * - `calls` records every request's title and year.
  */
 export class FakeFactGenerator implements FactGenerator {
-  readonly calls: { title: string; releaseYear: number }[] = [];
+  readonly calls: { title: string; releaseYear: number | null }[] = [];
   private readonly scripted: (FactResult | Error)[] = [];
   private readonly delayMs: number;
 

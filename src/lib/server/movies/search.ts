@@ -8,8 +8,11 @@ import { db } from "../db";
 const MAX_RESULTS = 8;
 const select = { id: true, title: true, releaseYear: true } as const;
 // "Alphabetically" means by the normalized title (ignores case and accents),
-// then by year so remakes are listed oldest first.
-const orderBy = [{ normalizedTitle: "asc" }, { releaseYear: "asc" }] as const;
+// then by year so remakes are listed oldest first, with no-year rows last.
+const orderBy = [
+  { normalizedTitle: "asc" },
+  { releaseYear: { sort: "asc", nulls: "last" } },
+] as const;
 
 /**
  * Autocomplete over VERIFIED movies only (SPEC §6, §10): titles starting with

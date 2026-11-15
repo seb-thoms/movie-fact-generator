@@ -31,6 +31,15 @@ describe("buildFactPrompt (SPEC §8 prompt-injection defenses)", () => {
     expect(data).toEqual({ title: "Dune", releaseYear: 2021 });
   });
 
+  it("sends releaseYear null when the year wasn't given, and explains that case", () => {
+    const { instructions, input } = buildFactPrompt("Dune", null);
+
+    const data = JSON.parse(input.slice(DATA_START.length, -DATA_END.length));
+    expect(data).toEqual({ title: "Dune", releaseYear: null });
+    expect(instructions).toMatch(/releaseYear is null/i);
+    expect(instructions).toMatch(/best-known/i);
+  });
+
   it("keeps the title out of the instructions", () => {
     const { instructions } = buildFactPrompt("Zyxwv Unique Title", 2021);
 

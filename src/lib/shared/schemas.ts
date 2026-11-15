@@ -37,7 +37,8 @@ const releaseYearSchema = z
 
 export const favoriteMovieInputSchema = z.object({
   title: titleSchema,
-  releaseYear: releaseYearSchema,
+  // Optional (SPEC §4.2): missing or null both mean "year not given".
+  releaseYear: releaseYearSchema.nullish().transform((year) => year ?? null),
 });
 export type FavoriteMovieInput = z.infer<typeof favoriteMovieInputSchema>;
 

@@ -18,6 +18,27 @@ describe("Movie", () => {
     await expect(createMovie("dune", 2021)).resolves.toMatchObject({ releaseYear: 2021 });
   });
 
+  it("allows a movie without a release year", async () => {
+    const movie = await db.movie.create({ data: { title: "Dune", normalizedTitle: "dune" } });
+
+    expect(movie.releaseYear).toBeNull();
+  });
+
+  it("allows only one no-year row per title (partial unique index)", async () => {
+    await db.movie.create({ data: { title: "Dune", normalizedTitle: "dune" } });
+
+    const duplicate = db.movie.create({ data: { title: "DUNE", normalizedTitle: "dune" } });
+
+    await expect(duplicate).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  it("lets a no-year row coexist with dated rows of the same title", async () => {
+    await createMovie("dune", 2021);
+    await db.movie.create({ data: { title: "Dune", normalizedTitle: "dune" } });
+
+    expect(await db.movie.count({ where: { normalizedTitle: "dune" } })).toBe(2);
+  });
+
   it("starts as PENDING with no status timestamp", async () => {
     const movie = await createMovie("dune", 2021);
 

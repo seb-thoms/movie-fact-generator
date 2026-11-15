@@ -39,8 +39,11 @@ export async function addFavoriteMovie(
         data: [{ ...target, title: toDisplayTitle(input.title) }],
         skipDuplicates: true,
       });
-      const movie = await tx.movie.findUniqueOrThrow({
-        where: { normalizedTitle_releaseYear: target },
+      // findFirst, not findUnique: the year can be null, and "null" isn't a
+      // value Prisma's compound unique lookup accepts. The where still matches
+      // exactly one row (both unique indexes guarantee it).
+      const movie = await tx.movie.findFirstOrThrow({
+        where: target,
         select: favoriteMovieSelect,
       });
       await tx.userFavoriteMovie.create({ data: { userId, movieId: movie.id } });
@@ -68,7 +71,7 @@ async function findFavorite(userId: string): Promise<StoredFavorite | null> {
 
 function resolveAgainstExisting(
   existing: StoredFavorite,
-  target: { normalizedTitle: string; releaseYear: number },
+  target: { normalizedTitle: string; releaseYear: number | null },
 ): { movie: FavoriteMovie; created: boolean } {
   const isSameMovie =
     existing.normalizedTitle === target.normalizedTitle &&

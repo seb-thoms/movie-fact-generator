@@ -9,14 +9,18 @@ import { db, resetDatabase } from "../helpers/db";
 beforeEach(resetDatabase);
 afterAll(() => db.$disconnect());
 
-async function addMovie(title: string, releaseYear: number, status: MovieStatus = "VERIFIED") {
+async function addMovie(
+  title: string,
+  releaseYear: number | null,
+  status: MovieStatus = "VERIFIED",
+) {
   return db.movie.create({
     data: { title, normalizedTitle: normalizeTitle(title), releaseYear, status },
   });
 }
 
-function titles(results: { title: string; releaseYear: number }[]) {
-  return results.map((movie) => `${movie.title} (${movie.releaseYear})`);
+function titles(results: { title: string; releaseYear: number | null }[]) {
+  return results.map((movie) => `${movie.title} (${movie.releaseYear ?? "no year"})`);
 }
 
 describe("searchVerifiedMovies (SPEC §6, §10)", () => {
@@ -52,6 +56,16 @@ describe("searchVerifiedMovies (SPEC §6, §10)", () => {
       "A Dune Story (2015)",
       "Return to Dune (2010)",
     ]);
+  });
+
+  it("returns no-year movies with releaseYear null, after dated ones of the same title", async () => {
+    await addMovie("Dune", null);
+    await addMovie("Dune", 2021);
+
+    const results = await searchVerifiedMovies("dune");
+
+    expect(titles(results)).toEqual(["Dune (2021)", "Dune (no year)"]);
+    expect(results[1]?.releaseYear).toBeNull();
   });
 
   it("returns at most 8 results, filling with prefix matches first", async () => {

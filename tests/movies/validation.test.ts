@@ -56,7 +56,7 @@ describe("favorite movie input: title (SPEC §4.2)", () => {
   });
 });
 
-describe("favorite movie input: releaseYear (SPEC §4.2)", () => {
+describe("favorite movie input: releaseYear (SPEC §4.2, optional)", () => {
   it("accepts 1888 through the current year + 2", () => {
     expect(accepts({ ...valid, releaseYear: 1888 })).toBe(true);
     expect(accepts({ ...valid, releaseYear: currentYear + 2 })).toBe(true);
@@ -67,10 +67,16 @@ describe("favorite movie input: releaseYear (SPEC §4.2)", () => {
     expect(accepts({ ...valid, releaseYear: currentYear + 3 })).toBe(false);
   });
 
-  it("requires an integer number", () => {
+  it("requires a given year to be an integer number", () => {
     expect(accepts({ ...valid, releaseYear: 2021.5 })).toBe(false);
     expect(accepts({ ...valid, releaseYear: "2021" })).toBe(false);
-    expect(accepts({ title: "Dune" })).toBe(false);
+  });
+
+  it("is optional: a missing or null year becomes null", () => {
+    expect(favoriteMovieInputSchema.parse({ title: "Dune" }).releaseYear).toBeNull();
+    expect(
+      favoriteMovieInputSchema.parse({ title: "Dune", releaseYear: null }).releaseYear,
+    ).toBeNull();
   });
 });
 
