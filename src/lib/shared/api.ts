@@ -17,3 +17,7 @@ export type ValidationDetails = { fieldErrors: Record<string, string[]> };
 export type ApiErrorBody = {
   error: { code: ErrorCode; message: string; details?: ValidationDetails };
 };
+
+/** One autocomplete suggestion (GET /api/movies/search). */
+export type MovieSearchResult = { id: string; title: string; releaseYear: number };
+export type MovieSearchResponse = { movies: MovieSearchResult[] };

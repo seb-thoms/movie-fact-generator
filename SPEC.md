@@ -438,6 +438,7 @@ Even if the movie is already `NOT_RECOGNIZED` (another user entered it earlier),
 - **One submit path:** the form always submits `{ title, releaseYear }`; the server resolves it (§9). There is no separate "submit by movie id" path.
 - **Accessibility:** the accessible combobox pattern (`role="combobox"`, listbox, `aria-activedescendant`), with arrow keys, Enter, and Escape.
 - **Query safety:** use Prisma `startsWith` / `contains` (parameterized) on `normalizedTitle`. Normalization already strips `%` and `_`; confirm Prisma's wildcard handling regardless.
+  - **Verified (Prisma 7.10):** Prisma does **not** escape `%` or `_` in `startsWith` / `contains`; they reach SQL `LIKE` as wildcards. Values are still parameterized (no SQL injection), but normalization is the only thing preventing wildcard matching, so search must always query with the normalized term. Tests cover both facts.
 - **Not handled now:** offensive or spammy titles (see §17).
 - **Sign out:** the onboarding page also has a sign-out button (like the dashboard's logout), so a user who hasn't picked a favorite can still leave.
 
