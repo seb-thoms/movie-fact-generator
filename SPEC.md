@@ -439,6 +439,7 @@ Even if the movie is already `NOT_RECOGNIZED` (another user entered it earlier),
 - **Accessibility:** the accessible combobox pattern (`role="combobox"`, listbox, `aria-activedescendant`), with arrow keys, Enter, and Escape.
 - **Query safety:** use Prisma `startsWith` / `contains` (parameterized) on `normalizedTitle`. Normalization already strips `%` and `_`; confirm Prisma's wildcard handling regardless.
 - **Not handled now:** offensive or spammy titles (see §17).
+- **Sign out:** the onboarding page also has a sign-out button (like the dashboard's logout), so a user who hasn't picked a favorite can still leave.
 
 ---
 

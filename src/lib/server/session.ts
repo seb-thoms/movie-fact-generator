@@ -23,3 +23,16 @@ export async function requireUser(): Promise<SessionUser> {
   const { id, name, email, image } = session.user;
   return { id, name, email, image: image ?? null };
 }
+
+/**
+ * Like requireUser(), but returns null instead of throwing when signed out.
+ * For pages that render differently for visitors (the landing page).
+ */
+export async function getOptionalUser(): Promise<SessionUser | null> {
+  try {
+    return await requireUser();
+  } catch (error) {
+    if (error instanceof AppError && error.code === "UNAUTHENTICATED") return null;
+    throw error;
+  }
+}
