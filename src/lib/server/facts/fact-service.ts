@@ -14,9 +14,12 @@ import {
 } from "./constants";
 import type { FactGenerator, FactResult } from "./fact-generator";
 import {
+  countMovieFacts,
   findFreshDelivery,
   findLatestFactForVerifiedMovie,
   findLatestUserFact,
+  findLeastRecentlySeenFact,
+  findOldestUnseenFact,
   type StoredFact,
 } from "./fact-queries";
 import { releaseLease, tryAcquireLease } from "./lease";
@@ -69,6 +72,10 @@ export async function getFactForUser(
     const justDelivered = await findFreshDelivery(userId, movieId);
     if (justDelivered) return { fact: justDelivered, source: "cache" };
 
+    // Pool only for VERIFIED movies; an unconfirmed movie always generates.
+    if (options.strategy === "pool" && movie.status === "VERIFIED") {
+      return await serveFromPool(userId, movie, options);
+    }
     return await generateFact(userId, movie, options);
   } finally {
     await releaseLease(userId, movieId, holderId);
@@ -102,6 +109,43 @@ async function waitForOtherRequest(
   return fallback(userId, movie.id);
 }
 
+/**
+ * Step 6, pool strategy (SPEC §7.2): reuse facts other users already paid for.
+ *  1. The oldest fact this user hasn't seen → deliver it, no API call.
+ *  2. Fewer than FACT_POOL_SIZE facts → generate a new one.
+ *  3. Otherwise (seen them all) → the one this user saw longest ago.
+ */
+async function serveFromPool(
+  userId: string,
+  movie: FavoriteMovie,
+  options: FactServiceOptions,
+): Promise<FactOutcome> {
+  const unseen = await findOldestUnseenFact(userId, movie.id);
+  if (unseen) return deliverExistingFact(userId, movie.id, unseen);
+
+  if ((await countMovieFacts(movie.id)) < options.poolSize) {
+    return generateFact(userId, movie, options);
+  }
+
+  const leastRecent = await findLeastRecentlySeenFact(userId, movie.id);
+  if (leastRecent) return deliverExistingFact(userId, movie.id, leastRecent);
+  return generateFact(userId, movie, options); // unreachable in practice: a full pool was seen
+}
+
+/** SPEC §7.3: delivering an existing fact records a delivery (it starts the 60 s cache). */
+async function deliverExistingFact(
+  userId: string,
+  movieId: string,
+  fact: StoredFact,
+): Promise<FactOutcome> {
+  try {
+    await db.factDelivery.create({ data: { userId, movieId, movieFactId: fact.id } });
+  } catch (error) {
+    throw userDeletedOr(error, movieId);
+  }
+  return { fact, source: "pool" };
+}
+
 /** Steps 6-7: call the generator (outside any transaction) and handle its answer. */
 async function generateFact(
   userId: string,
@@ -131,14 +175,21 @@ async function generateFact(
     const fact = await saveGeneratedFact(userId, movie.id, result.fact, result.model);
     return { fact, source: "generated" };
   } catch (error) {
-    // SPEC §7.5: the user was deleted while we were generating; the delivery's
-    // foreign key fails and the whole transaction rolls back.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
-      console.warn({ event: "fact_discarded_user_deleted", movieId: movie.id });
-      throw new AppError("UNAUTHENTICATED", 401, "Please sign in to continue.");
-    }
-    throw error;
+    throw userDeletedOr(error, movie.id);
   }
+}
+
+/**
+ * SPEC §7.5: if the user was deleted mid-request, the delivery's foreign key
+ * fails (Prisma P2003) and the transaction rolls back. Catch exactly that,
+ * log it, and answer 401; any other error is rethrown unchanged.
+ */
+function userDeletedOr(error: unknown, movieId: string): unknown {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+    console.warn({ event: "fact_discarded_user_deleted", movieId });
+    return new AppError("UNAUTHENTICATED", 401, "Please sign in to continue.");
+  }
+  return error;
 }
 
 /**

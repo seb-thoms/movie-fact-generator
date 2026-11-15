@@ -49,3 +49,42 @@ export async function findLatestFactForVerifiedMovie(movieId: string): Promise<S
     select: { id: true, content: true, createdAt: true },
   });
 }
+
+/** Pool step 1: the oldest fact for this movie that this user has never been shown. */
+export async function findOldestUnseenFact(
+  userId: string,
+  movieId: string,
+): Promise<StoredFact | null> {
+  return db.movieFact.findFirst({
+    where: { movieId, deliveries: { none: { userId } } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, content: true, createdAt: true },
+  });
+}
+
+/** Pool step 2: how many facts exist for this movie (all users). */
+export async function countMovieFacts(movieId: string): Promise<number> {
+  return db.movieFact.count({ where: { movieId } });
+}
+
+/**
+ * Pool step 3: the fact this user saw longest ago, judged by their MOST RECENT
+ * viewing of each fact (a fact seen long ago but again yesterday is "recent").
+ */
+export async function findLeastRecentlySeenFact(
+  userId: string,
+  movieId: string,
+): Promise<StoredFact | null> {
+  const rows = await db.$queryRaw<StoredFact[]>`
+    SELECT f.id, f.content, f."createdAt"
+    FROM "MovieFact" f
+    JOIN (
+      SELECT "movieFactId", max("deliveredAt") AS "lastSeenAt"
+      FROM "FactDelivery"
+      WHERE "userId" = ${userId} AND "movieId" = ${movieId}
+      GROUP BY "movieFactId"
+    ) seen ON seen."movieFactId" = f.id
+    ORDER BY seen."lastSeenAt" ASC, f."createdAt" ASC
+    LIMIT 1`;
+  return rows[0] ?? null;
+}
