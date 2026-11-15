@@ -1,19 +1,27 @@
 import Link from "next/link";
 
+import { Avatar } from "@/components/avatar";
+import { FactPanel } from "@/components/fact-panel";
 import { SignOutButton } from "@/components/sign-out-button";
 import { getFavoriteMovie } from "@/lib/server/movies/favorites";
 import { guardAppPage } from "@/lib/server/page-guards";
 import { formatMovie } from "@/lib/shared/movies";
 
-// Dashboard (SPEC §11). Step 7 adds the email, photo, and the fact panel.
+// Dashboard (SPEC §11): profile, favorite movie, and its fun fact.
 export default async function DashboardPage() {
   const user = await guardAppPage("/dashboard");
   const favorite = await getFavoriteMovie(user.id);
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 p-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Hey {user.name}</h1>
+      <header className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Avatar name={user.name} image={user.image} />
+          <div>
+            <h1 className="text-2xl font-semibold">Hey {user.name}</h1>
+            <p className="text-sm text-zinc-500">{user.email}</p>
+          </div>
+        </div>
         <SignOutButton />
       </header>
 
@@ -35,8 +43,8 @@ export default async function DashboardPage() {
             <h2 id="fact-heading" className="text-sm font-medium uppercase text-zinc-500">
               Here&apos;s a fun fact
             </h2>
-            {/* Filled by the fact panel in steps 6–7 (OpenAI-generated facts). */}
-            <p className="text-zinc-400" />
+            {/* key: a new favorite remounts the panel and fetches its fact. */}
+            <FactPanel key={favorite.id} movieId={favorite.id} movieLabel={formatMovie(favorite)} />
           </section>
         </>
       ) : (
