@@ -21,3 +21,14 @@ export function parseOrThrow<Schema extends z.ZodType>(
   }
   throw new AppError("VALIDATION_ERROR", 422, "Please check your input.", { fieldErrors });
 }
+
+/** Reads a JSON request body; malformed JSON is a 422 like any invalid input. */
+export async function readJsonBody(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    throw new AppError("VALIDATION_ERROR", 422, "The request body must be valid JSON.", {
+      fieldErrors: {},
+    });
+  }
+}

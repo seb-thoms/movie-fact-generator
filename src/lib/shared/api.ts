@@ -21,3 +21,12 @@ export type ApiErrorBody = {
 /** One autocomplete suggestion (GET /api/movies/search). */
 export type MovieSearchResult = { id: string; title: string; releaseYear: number };
 export type MovieSearchResponse = { movies: MovieSearchResult[] };
+
+/** A user's favorite movie as the API returns it. */
+export type FavoriteMovie = {
+  id: string;
+  title: string;
+  releaseYear: number;
+  status: "PENDING" | "VERIFIED" | "NOT_RECOGNIZED";
+};
+export type FavoriteMovieResponse = { movie: FavoriteMovie };

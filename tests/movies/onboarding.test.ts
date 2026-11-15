@@ -1,0 +1,200 @@
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+
+import type { MovieStatus } from "@/generated/prisma/client";
+import { AppError } from "@/lib/server/errors";
+import { addFavoriteMovie } from "@/lib/server/movies/onboarding";
+
+import { createUser, db, raceAgainstUncommitted, resetDatabase } from "../helpers/db";
+
+beforeEach(resetDatabase);
+afterAll(() => db.$disconnect());
+
+const dune = { title: "Dune", releaseYear: 2021 };
+
+async function existingMovie(title: string, releaseYear: number, status: MovieStatus) {
+  return db.movie.create({
+    data: { title, normalizedTitle: title.toLowerCase(), releaseYear, status },
+  });
+}
+
+describe("addFavoriteMovie (SPEC §9)", () => {
+  it("saves a new movie as PENDING and creates the favorite", async () => {
+    const userId = await createUser("u1");
+
+    const result = await addFavoriteMovie(userId, {
+      title: "Dune:   Part  Two",
+      releaseYear: 2024,
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.movie).toMatchObject({
+      title: "Dune: Part Two",
+      releaseYear: 2024,
+      status: "PENDING",
+    });
+    const stored = await db.movie.findUniqueOrThrow({ where: { id: result.movie.id } });
+    expect(stored.normalizedTitle).toBe("dune part two");
+    expect(await db.userFavoriteMovie.count({ where: { userId, movieId: stored.id } })).toBe(1);
+  });
+
+  it("links an existing VERIFIED movie without creating another or changing it", async () => {
+    const userId = await createUser("u1");
+    const movie = await existingMovie("Dune", 2021, "VERIFIED");
+
+    const result = await addFavoriteMovie(userId, { title: "DUNE", releaseYear: 2021 });
+
+    expect(result).toEqual({
+      created: true,
+      movie: { id: movie.id, title: "Dune", releaseYear: 2021, status: "VERIFIED" },
+    });
+    expect(await db.movie.count()).toBe(1);
+  });
+
+  it("links an existing NOT_RECOGNIZED movie normally, keeping its status", async () => {
+    const userId = await createUser("u1");
+    await existingMovie("Zzyzx", 2003, "NOT_RECOGNIZED");
+
+    const result = await addFavoriteMovie(userId, { title: "Zzyzx", releaseYear: 2003 });
+
+    expect(result.movie.status).toBe("NOT_RECOGNIZED");
+    expect(result.created).toBe(true);
+  });
+
+  it("treats the same movie again (any spelling) as an idempotent retry", async () => {
+    const userId = await createUser("u1");
+    const first = await addFavoriteMovie(userId, dune);
+
+    const retry = await addFavoriteMovie(userId, { title: "  dune! ", releaseYear: 2021 });
+
+    expect(retry).toEqual({ created: false, movie: first.movie });
+    expect(await db.movie.count()).toBe(1);
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+  });
+
+  it("rejects a different movie with 409 FAVORITE_EXISTS and saves nothing", async () => {
+    const userId = await createUser("u1");
+    await addFavoriteMovie(userId, dune);
+
+    const attempt = addFavoriteMovie(userId, { title: "Alien", releaseYear: 1979 });
+
+    await expect(attempt).rejects.toBeInstanceOf(AppError);
+    await expect(attempt).rejects.toMatchObject({ code: "FAVORITE_EXISTS", status: 409 });
+    expect(await db.movie.count()).toBe(1);
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+  });
+
+  it("isn't blocked by another user's favorite", async () => {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+    await addFavoriteMovie(alice, dune);
+
+    const result = await addFavoriteMovie(bob, { title: "Alien", releaseYear: 1979 });
+
+    expect(result.created).toBe(true);
+  });
+});
+
+describe("addFavoriteMovie under concurrency (SPEC §9 step 6)", () => {
+  it("5 parallel submits of the same movie: one favorite, one 201, the rest idempotent", async () => {
+    const userId = await createUser("u1");
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => addFavoriteMovie(userId, dune)),
+    );
+
+    expect(results.filter((r) => r.created)).toHaveLength(1);
+    expect(new Set(results.map((r) => r.movie.id)).size).toBe(1);
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+    expect(await db.movie.count()).toBe(1);
+  });
+
+  it("2 parallel submits of different movies: one wins, the other gets 409, no orphan movie", async () => {
+    const userId = await createUser("u1");
+
+    const results = await Promise.allSettled([
+      addFavoriteMovie(userId, dune),
+      addFavoriteMovie(userId, { title: "Alien", releaseYear: 1979 }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.status === "rejected" && rejected[0].reason).toMatchObject({
+      code: "FAVORITE_EXISTS",
+    });
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+    expect(await db.movie.count()).toBe(1);
+  });
+
+  it("2 users adding the same new movie at once: one movie row, two favorites", async () => {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+
+    const [a, b] = await Promise.all([addFavoriteMovie(alice, dune), addFavoriteMovie(bob, dune)]);
+
+    expect(a.movie.id).toBe(b.movie.id);
+    expect(await db.movie.count()).toBe(1);
+    expect(await db.userFavoriteMovie.count()).toBe(2);
+  });
+});
+
+// The tests above race naturally, so whether they hit the collision depends on
+// timing. These force it: a competing transaction holds the conflicting rows
+// uncommitted until every call under test is blocked on them.
+describe("addFavoriteMovie losing a race (deterministic)", () => {
+  async function holdFavorite(
+    tx: Parameters<Parameters<typeof raceAgainstUncommitted>[0]>[0],
+    userId: string,
+  ) {
+    const movie = await tx.movie.create({
+      data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 },
+    });
+    await tx.userFavoriteMovie.create({ data: { userId, movieId: movie.id } });
+  }
+
+  it("calls that lose to the same movie all get the idempotent result", async () => {
+    const userId = await createUser("u1");
+
+    const results = await raceAgainstUncommitted(
+      (tx) => holdFavorite(tx, userId),
+      () => Array.from({ length: 5 }, () => addFavoriteMovie(userId, dune)),
+      5,
+    );
+
+    expect(results.every((r) => r.status === "fulfilled" && !r.value.created)).toBe(true);
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+    expect(await db.movie.count()).toBe(1);
+  });
+
+  it("a call that loses to a different movie gets 409 and its movie row is rolled back", async () => {
+    const userId = await createUser("u1");
+
+    const [result] = await raceAgainstUncommitted(
+      (tx) => holdFavorite(tx, userId),
+      () => [addFavoriteMovie(userId, { title: "Alien", releaseYear: 1979 })],
+      1,
+    );
+
+    expect(result?.status === "rejected" && result.reason).toMatchObject({
+      code: "FAVORITE_EXISTS",
+    });
+    expect(await db.movie.count()).toBe(1);
+  });
+
+  it("creators of the same new movie never fail: ON CONFLICT DO NOTHING, then select", async () => {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+
+    const results = await raceAgainstUncommitted(
+      (tx) =>
+        tx.movie.create({ data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 } }),
+      () => [addFavoriteMovie(alice, dune), addFavoriteMovie(bob, dune)],
+      2,
+    );
+
+    expect(results.every((r) => r.status === "fulfilled" && r.value.created)).toBe(true);
+    expect(await db.movie.count()).toBe(1);
+    expect(await db.userFavoriteMovie.count()).toBe(2);
+  });
+});
