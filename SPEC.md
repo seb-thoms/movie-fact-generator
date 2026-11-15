@@ -291,7 +291,7 @@ Flow: see §9.
 
 | Status | Code | When |
 |---|---|---|
-| 404 | `NOT_FOUND` | The movie is not one of this user's favorites. Use 404, not 403, so other users' data isn't revealed. |
+| 404 | `NOT_FOUND` | The movie is not one of this user's favorites, or the id is malformed (over 100 characters). Use 404, not 403, so other users' data isn't revealed. |
 | 422 | `MOVIE_NOT_RECOGNIZED` | The movie's status is `NOT_RECOGNIZED` (already known, or just learned from the model). The user keeps this favorite; there is no prompt to change it. |
 | 503 | `FACT_UNAVAILABLE` | Generation failed and no fallback fact exists; or generation is in progress and nothing exists yet. The message should invite the user to retry. |
 
@@ -397,7 +397,7 @@ Serving a fallback does **not** insert a `FactDelivery`.
 
 ### 7.5 Concurrency edge case: deletion mid-generation
 
-If the user is deleted while their generation is in flight, the delivery insert fails with a foreign-key error (Prisma `P2003`). Catch exactly that error, log it, and discard the result. The transaction rolls back cleanly.
+If the user is deleted while their generation is in flight, the delivery insert fails with a foreign-key error (Prisma `P2003`). Catch exactly that error, log it, and discard the result. The transaction rolls back cleanly. The request returns `401 UNAUTHENTICATED`: the account and its sessions no longer exist.
 
 ---
 
