@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Avatar } from "@/components/avatar";
+import { DeleteAccountSection } from "@/components/delete-account-section";
 import { FactPanel } from "@/components/fact-panel";
 import { SignOutButton } from "@/components/sign-out-button";
 import { getFavoriteMovie } from "@/lib/server/movies/favorites";
@@ -58,6 +59,8 @@ export default async function DashboardPage() {
           </Link>
         </section>
       )}
+
+      <DeleteAccountSection />
     </main>
   );
 }
