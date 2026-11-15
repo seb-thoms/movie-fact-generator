@@ -38,3 +38,9 @@ export type FactResponse = {
   source: FactSource;
   stale: boolean;
 };
+
+/** GET /api/me (SPEC §6). A list, so multiple favorites can be added later. */
+export type MeResponse = {
+  user: { id: string; name: string; email: string; image: string | null };
+  favoriteMovies: FavoriteMovie[];
+};
