@@ -181,7 +181,7 @@ The display `title` is only trimmed with whitespace collapsed. When a movie alre
 - **`title`:**
   - String, trimmed.
   - 1–100 characters.
-  - No control characters.
+  - No control characters (Unicode `Cc`), and no invisible format characters (Unicode `Cf`: right-to-left overrides, zero-width spaces). Titles appear in other users' autocomplete, so text that displays differently from what it contains is rejected.
   - Must be non-empty after normalization.
 - **`releaseYear`:** integer, 1888 ≤ year ≤ (current year + 2). Required.
 - **Search `q`:** 1–100 characters raw, and at least 2 characters after normalization.
