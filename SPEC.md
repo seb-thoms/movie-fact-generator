@@ -416,7 +416,7 @@ If the user is deleted while their generation is in flight, the delivery insert 
   - Reject if `found` is true and `fact` is empty or longer than 500 characters.
   - Any parse or validation failure counts as a generation failure.
 - **Prompt-injection defenses (layered):**
-  1. Input limits from §4.2: 100 characters, single line, no control characters.
+  1. Input limits from §4.2: 100 characters, single line, no control or invisible format characters.
   2. Instructions go in the system message. The title and year go in the user message, inside clear delimiters, with an explicit rule that they are data identifying a film and never instructions.
   3. Instruct the model to return `found: false` when it doesn't recognize a film with that title from that year, rather than inventing a fact.
   4. Structured output plus validation.
@@ -495,7 +495,7 @@ Even if the movie is already `NOT_RECOGNIZED` (another user entered it earlier),
    - **Cascades remove:** sessions, accounts, favorites, deliveries, and leases.
    - **Kept:** `Movie` and `MovieFact`, which are shared and contain no personal data.
 4. **Response:** `204`. The sessions are gone, so the user is logged out everywhere.
-5. **Signing in again** later creates a fresh user, who goes through onboarding.
+5. **Signing in again** later creates a fresh user, who lands on the dashboard with no favorite set.
 
 Implement this in our own endpoint so the API contract stays ours. Use Better Auth's built-in delete-user APIs only if they fit this flow; check current docs.
 

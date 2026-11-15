@@ -41,9 +41,9 @@ The only committed docs are `CLAUDE.md`, `SPEC.md`, and the README. Don't create
 2. **Auth:** Better Auth + Google, `requireUser()` data access layer, optimistic middleware/proxy, landing page, redirects (SPEC §5), name fallback.
 3. **Movies:** normalization and validation (SPEC §4), the search endpoint, the `FactGenerator` interface with a fake for tests.
 4. **OpenAI:** production `FactGenerator` (structured output, deadline, retry, moderation, prompt defenses; SPEC §8).
-5. **Onboarding:** `POST /api/me/favorite-movies` (SPEC §9) and the onboarding page with autocomplete (SPEC §10).
+5. **Favorite movie:** `POST /api/me/favorite-movies` (SPEC §9), `PUT /api/me/favorite-movie` to set or edit (SPEC §9.1), the movie page with autocomplete (SPEC §10), and the dashboard's favorite / "No favourite movie set" display (SPEC §11).
 6. **Fact service:** cache window, lease, strategies, fallback, deletion edge case (SPEC §7), and `GET /api/movies/:movieId/fact`.
-7. **Dashboard:** `GET /api/me` and the dashboard UI with all states (SPEC §11).
+7. **Dashboard:** `GET /api/me`, the email and photo (or initials avatar), and the fact panel with all its states (SPEC §11).
 8. **Account deletion:** `DELETE /api/me` with token revocation (SPEC §12) and the UI confirmation.
 9. **Deployment readiness (no actual deploy):** make sure the app is deployable on any Node host, with config only through env vars and migrations via `prisma migrate deploy`. Write the README's deployment guide (SPEC §16).
 10. **README:**
@@ -82,7 +82,7 @@ src/
       auth.ts             # Better Auth instance
       session.ts          # requireUser(): the authoritative auth check
       errors.ts           # AppError + route-handler error mapping
-      movies/             # normalization, movie lookup, search, onboarding service
+      movies/             # search, favorites service (set, edit, lookup)
       facts/              # fact service, lease, strategies, fallback
       openai/             # FactGenerator implementation, prompt, moderation
       account/            # deletion + Google revocation
@@ -106,7 +106,7 @@ tests/                    # Vitest tests, helpers, fake FactGenerator
 - **Middleware/proxy is optimistic only.** It is never the security boundary.
 - **No `NEXT_PUBLIC_` secrets.** Secrets stay in env vars. Never log tokens, cookies, secrets, or full OpenAI request or response bodies.
 - **Nothing internal reaches clients.** Error responses contain only safe user-facing messages: no stack traces, no OpenAI error details.
-- **Personal data never goes to OpenAI.** Only the movie title and release year are sent.
+- **Personal data never goes to OpenAI.** Only the movie title and release year (when given) are sent.
 - **Safe rendering.** Never use `dangerouslySetInnerHTML`. Model output is rendered as plain text.
 
 ## Database rules
@@ -117,6 +117,9 @@ tests/                    # Vitest tests, helpers, fake FactGenerator
 - **Timestamps:** all timestamps are `@db.Timestamptz(3)`.
 - **Transactions:** multi-row writes run in one transaction. **No transaction stays open across an OpenAI call.**
 - **Find-or-create:** races are handled with `ON CONFLICT DO NOTHING` + select, or by catching the specific Prisma error code. Never with a bare `upsert` that can throw on a race.
+- **Nullable columns in unique keys:** Postgres treats NULLs as distinct, so add a partial unique index for the NULL case (Prisma `partialIndexes` preview), as `Movie` does for no-year rows.
+- **After every schema change:** run `npx prisma generate` (Prisma 7's `migrate dev` no longer does), and check drift: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` must print an empty migration.
+- **If `migrate dev` refuses to run non-interactively:** generate the SQL with that `migrate diff` command, save it as a new `prisma/migrations/<UTC timestamp>_<name>/migration.sql`, apply it with `npx prisma migrate deploy`, and re-check drift.
 
 ## Code conventions
 

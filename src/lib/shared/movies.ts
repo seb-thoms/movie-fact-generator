@@ -25,3 +25,8 @@ export function normalizeTitle(raw: string): string {
 export function toDisplayTitle(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
+
+/** "Dune (2021)", or just "Dune" when the year wasn't given (SPEC §11). */
+export function formatMovie(movie: { title: string; releaseYear: number | null }): string {
+  return movie.releaseYear === null ? movie.title : `${movie.title} (${movie.releaseYear})`;
+}

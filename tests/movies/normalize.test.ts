@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeTitle, toDisplayTitle } from "@/lib/shared/movies";
+import { formatMovie, normalizeTitle, toDisplayTitle } from "@/lib/shared/movies";
 
 describe("normalizeTitle (SPEC §4.1)", () => {
   it.each([
@@ -38,5 +38,15 @@ describe("normalizeTitle (SPEC §4.1)", () => {
 describe("toDisplayTitle", () => {
   it("trims and collapses whitespace but keeps case, accents, and punctuation", () => {
     expect(toDisplayTitle("  Amélie:   The\tFabulous  ")).toBe("Amélie: The Fabulous");
+  });
+});
+
+describe("formatMovie (SPEC §11)", () => {
+  it('shows "Title (Year)"', () => {
+    expect(formatMovie({ title: "Dune", releaseYear: 2021 })).toBe("Dune (2021)");
+  });
+
+  it("shows just the title when there's no year", () => {
+    expect(formatMovie({ title: "Dune", releaseYear: null })).toBe("Dune");
   });
 });
