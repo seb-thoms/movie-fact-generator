@@ -199,8 +199,8 @@ Validation failures return `422 VALIDATION_ERROR` with field-level details. The 
 
 - **`/`:**
   - Unauthenticated: landing page with "Sign in with Google".
-  - Authenticated: redirect to `/dashboard`.
-- **After Google sign-in:** always `/dashboard`.
+  - Authenticated: first-time user (no favorite yet) → `/onboarding`; returning user → `/dashboard`.
+- **After Google sign-in** (Better Auth returns to `/`): first-time users (no favorite) → `/onboarding`; returning users → `/dashboard`, as the take-home brief requires.
 - **`/onboarding`:**
   - Requires a session.
   - The movie page: set a favorite for the first time, or edit it. Reachable from the dashboard at any time.

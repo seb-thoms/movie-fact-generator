@@ -41,13 +41,13 @@ describe("guardLandingPage (/)", () => {
     await expect(guardLandingPage()).resolves.toBeUndefined();
   });
 
-  it("redirects a signed-in user without a favorite to /dashboard", async () => {
+  it("redirects a first-time user (no favorite yet) to /onboarding", async () => {
     await signIn(await createUser("u1"));
 
-    await expect(guardLandingPage()).rejects.toMatchObject({ to: "/dashboard" });
+    await expect(guardLandingPage()).rejects.toMatchObject({ to: "/onboarding" });
   });
 
-  it("redirects a signed-in user with a favorite to /dashboard", async () => {
+  it("redirects a returning user (has a favorite) to /dashboard", async () => {
     const userId = await createUser("u1");
     await giveFavorite(userId);
     await signIn(userId);
