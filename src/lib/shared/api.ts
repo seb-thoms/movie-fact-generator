@@ -30,3 +30,11 @@ export type FavoriteMovie = {
   status: "PENDING" | "VERIFIED" | "NOT_RECOGNIZED";
 };
 export type FavoriteMovieResponse = { movie: FavoriteMovie };
+
+/** GET /api/movies/:movieId/fact (SPEC §6). `stale` is true exactly when source is "fallback". */
+export type FactSource = "cache" | "generated" | "pool" | "fallback";
+export type FactResponse = {
+  fact: { id: string; content: string; createdAt: string };
+  source: FactSource;
+  stale: boolean;
+};
