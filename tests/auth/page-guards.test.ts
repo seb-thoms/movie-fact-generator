@@ -41,10 +41,10 @@ describe("guardLandingPage (/)", () => {
     await expect(guardLandingPage()).resolves.toBeUndefined();
   });
 
-  it("redirects a signed-in user without a favorite to /onboarding", async () => {
+  it("redirects a signed-in user without a favorite to /dashboard", async () => {
     await signIn(await createUser("u1"));
 
-    await expect(guardLandingPage()).rejects.toMatchObject({ to: "/onboarding" });
+    await expect(guardLandingPage()).rejects.toMatchObject({ to: "/dashboard" });
   });
 
   it("redirects a signed-in user with a favorite to /dashboard", async () => {
@@ -57,13 +57,12 @@ describe("guardLandingPage (/)", () => {
 });
 
 describe("guardAppPage", () => {
-  it("redirects a signed-out visitor from /dashboard to /", async () => {
-    await expect(guardAppPage("/dashboard")).rejects.toMatchObject({ to: "/" });
-  });
-
-  it("redirects a signed-out visitor from /onboarding to /", async () => {
-    await expect(guardAppPage("/onboarding")).rejects.toMatchObject({ to: "/" });
-  });
+  it.each(["/dashboard", "/onboarding"] as const)(
+    "redirects a signed-out visitor from %s to /",
+    async (page) => {
+      await expect(guardAppPage(page)).rejects.toMatchObject({ to: "/" });
+    },
+  );
 
   it("redirects a forged cookie to / (the database check, not just cookie presence)", async () => {
     request.headers = new Headers({ cookie: "better-auth.session_token=forged.signature" });
@@ -71,32 +70,24 @@ describe("guardAppPage", () => {
     await expect(guardAppPage("/dashboard")).rejects.toMatchObject({ to: "/" });
   });
 
-  it("returns the user on /onboarding when they have no favorite yet", async () => {
-    const userId = await createUser("u1");
-    await signIn(userId);
+  it.each(["/dashboard", "/onboarding"] as const)(
+    "returns the user on %s without a favorite",
+    async (page) => {
+      const userId = await createUser("u1");
+      await signIn(userId);
 
-    await expect(guardAppPage("/onboarding")).resolves.toMatchObject({ id: userId });
-  });
+      await expect(guardAppPage(page)).resolves.toMatchObject({ id: userId });
+    },
+  );
 
-  it("redirects /onboarding to /dashboard once a favorite exists", async () => {
-    const userId = await createUser("u1");
-    await giveFavorite(userId);
-    await signIn(userId);
+  it.each(["/dashboard", "/onboarding"] as const)(
+    "returns the user on %s with a favorite (the movie page is also for editing)",
+    async (page) => {
+      const userId = await createUser("u1");
+      await giveFavorite(userId);
+      await signIn(userId);
 
-    await expect(guardAppPage("/onboarding")).rejects.toMatchObject({ to: "/dashboard" });
-  });
-
-  it("redirects /dashboard to /onboarding when there is no favorite", async () => {
-    await signIn(await createUser("u1"));
-
-    await expect(guardAppPage("/dashboard")).rejects.toMatchObject({ to: "/onboarding" });
-  });
-
-  it("returns the user on /dashboard when they have a favorite", async () => {
-    const userId = await createUser("u1");
-    await giveFavorite(userId);
-    await signIn(userId);
-
-    await expect(guardAppPage("/dashboard")).resolves.toMatchObject({ id: userId });
-  });
+      await expect(guardAppPage(page)).resolves.toMatchObject({ id: userId });
+    },
+  );
 });

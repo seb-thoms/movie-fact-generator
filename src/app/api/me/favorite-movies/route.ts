@@ -1,5 +1,5 @@
 import { toErrorResponse } from "@/lib/server/errors";
-import { addFavoriteMovie } from "@/lib/server/movies/onboarding";
+import { addFavoriteMovie } from "@/lib/server/movies/favorites";
 import { requireUser } from "@/lib/server/session";
 import { parseOrThrow, readJsonBody } from "@/lib/server/validation";
 import type { FavoriteMovieResponse } from "@/lib/shared/api";

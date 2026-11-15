@@ -2,21 +2,15 @@
 // and pages just follow the decision.
 
 export type AppPage = "/" | "/onboarding" | "/dashboard";
-export type RouteState = { signedIn: boolean; hasFavorite: boolean };
+export type RouteState = { signedIn: boolean };
 export type RouteDecision = { type: "render" } | { type: "redirect"; to: AppPage };
 
-const render: RouteDecision = { type: "render" };
-const redirectTo = (to: AppPage): RouteDecision => ({ type: "redirect", to });
-
-export function decideRoute(page: AppPage, { signedIn, hasFavorite }: RouteState): RouteDecision {
+export function decideRoute(page: AppPage, { signedIn }: RouteState): RouteDecision {
   if (page === "/") {
-    if (!signedIn) return render; // landing page
-    return redirectTo(hasFavorite ? "/dashboard" : "/onboarding");
+    // Landing page for visitors; signed-in users always go to the dashboard,
+    // which handles "no favorite yet" itself (SPEC §11).
+    return signedIn ? { type: "redirect", to: "/dashboard" } : { type: "render" };
   }
-
-  // /onboarding and /dashboard both require a session.
-  if (!signedIn) return redirectTo("/");
-
-  if (page === "/onboarding") return hasFavorite ? redirectTo("/dashboard") : render;
-  return hasFavorite ? render : redirectTo("/onboarding");
+  // /dashboard and the movie page (/onboarding) just require a session.
+  return signedIn ? { type: "render" } : { type: "redirect", to: "/" };
 }

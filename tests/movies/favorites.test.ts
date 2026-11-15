@@ -2,7 +2,11 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { MovieStatus } from "@/generated/prisma/client";
 import { AppError } from "@/lib/server/errors";
-import { addFavoriteMovie } from "@/lib/server/movies/onboarding";
+import {
+  addFavoriteMovie,
+  getFavoriteMovie,
+  setFavoriteMovie,
+} from "@/lib/server/movies/favorites";
 
 import { createUser, db, raceAgainstUncommitted, resetDatabase } from "../helpers/db";
 
@@ -230,5 +234,104 @@ describe("addFavoriteMovie losing a race (deterministic)", () => {
 
     expect(results.every((r) => r.status === "fulfilled" && r.value.created)).toBe(true);
     expect(await db.movie.count()).toBe(1);
+  });
+});
+
+describe("setFavoriteMovie (SPEC §9.1: PUT sets or replaces)", () => {
+  it("sets the favorite when there is none (created → 201)", async () => {
+    const userId = await createUser("u1");
+
+    const result = await setFavoriteMovie(userId, dune);
+
+    expect(result.created).toBe(true);
+    expect(result.movie).toMatchObject({ title: "Dune", releaseYear: 2021, status: "PENDING" });
+    expect(await db.userFavoriteMovie.count({ where: { userId } })).toBe(1);
+  });
+
+  it("replaces a different favorite (200) and keeps the old movie's fact history", async () => {
+    const userId = await createUser("u1");
+    const first = await setFavoriteMovie(userId, dune);
+    const fact = await db.movieFact.create({
+      data: { movieId: first.movie.id, content: "A Dune fact.", model: "test" },
+    });
+    await db.factDelivery.create({
+      data: { userId, movieId: first.movie.id, movieFactId: fact.id },
+    });
+
+    const result = await setFavoriteMovie(userId, { title: "Alien", releaseYear: 1979 });
+
+    expect(result.created).toBe(false);
+    expect(result.movie.title).toBe("Alien");
+    const favorites = await db.userFavoriteMovie.findMany({ where: { userId } });
+    expect(favorites.map((f) => f.movieId)).toEqual([result.movie.id]);
+    expect(await db.factDelivery.count({ where: { userId } })).toBe(1);
+  });
+
+  it("is a no-op for the same movie (200)", async () => {
+    const userId = await createUser("u1");
+    const first = await setFavoriteMovie(userId, dune);
+
+    const again = await setFavoriteMovie(userId, { title: "DUNE!", releaseYear: 2021 });
+
+    expect(again).toEqual({ created: false, movie: first.movie });
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+  });
+
+  it("can change a dated favorite to a no-year one", async () => {
+    const userId = await createUser("u1");
+    await setFavoriteMovie(userId, dune);
+
+    const result = await setFavoriteMovie(userId, { title: "Dune", releaseYear: null });
+
+    expect(result.movie.releaseYear).toBeNull();
+    expect(await db.userFavoriteMovie.count()).toBe(1);
+  });
+
+  it("never touches another user's favorite", async () => {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+    const alicesFavorite = await setFavoriteMovie(alice, dune);
+
+    await setFavoriteMovie(bob, { title: "Alien", releaseYear: 1979 });
+
+    expect(await getFavoriteMovie(alice)).toEqual(alicesFavorite.movie);
+  });
+
+  it("concurrent edits by one user leave exactly one favorite, without errors", async () => {
+    const userId = await createUser("u1");
+    const movies = [
+      dune,
+      { title: "Alien", releaseYear: 1979 },
+      { title: "Heat", releaseYear: 1995 },
+    ];
+
+    const results = await Promise.allSettled(movies.map((m) => setFavoriteMovie(userId, m)));
+
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    expect(await db.userFavoriteMovie.count({ where: { userId } })).toBe(1);
+  });
+
+  it("an edit waits for an in-flight edit and then wins (per-user row lock, deterministic)", async () => {
+    const userId = await createUser("u1");
+
+    const [result] = await raceAgainstUncommitted(
+      async (tx) => {
+        // Simulates another edit in progress: it holds the user's row lock and
+        // has set Dune, but hasn't committed yet.
+        await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
+        const movie = await tx.movie.create({
+          data: { title: "Dune", normalizedTitle: "dune", releaseYear: 2021 },
+        });
+        await tx.userFavoriteMovie.create({ data: { userId, movieId: movie.id } });
+      },
+      () => [setFavoriteMovie(userId, { title: "Alien", releaseYear: 1979 })],
+      1,
+    );
+
+    expect(result?.status === "fulfilled" && result.value).toMatchObject({
+      created: false,
+      movie: { title: "Alien" },
+    });
+    expect((await getFavoriteMovie(userId))?.title).toBe("Alien");
   });
 });
