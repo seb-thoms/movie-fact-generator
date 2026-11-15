@@ -359,3 +359,60 @@ describe("user deleted mid-generation (SPEC §7.5)", () => {
     expect(await db.movieFact.count({ where: { content: "Orphan fact." } })).toBe(0);
   });
 });
+
+describe("two users, same movie (per-user cache window and lease)", () => {
+  /** Alice and Bob both have Dune (2021) as their favorite: one shared Movie row. */
+  async function aliceAndBobShareDune() {
+    const alice = await createUser("alice");
+    const bob = await createUser("bob");
+    const movie = await createMovieWithStatus("Dune", 2021, "VERIFIED");
+    await favorite(alice, movie.id);
+    await favorite(bob, movie.id);
+    return { alice, bob, movieId: movie.id };
+  }
+
+  it("the cache is per user: Bob gets his own new fact right after Alice got hers", async () => {
+    const { alice, bob, movieId } = await aliceAndBobShareDune();
+    const generator = new FakeFactGenerator().respondWith(
+      found("Alice's fact."),
+      found("Bob's fact."),
+    );
+
+    const forAlice = await getFactForUser(alice, movieId, options(generator));
+    const forBob = await getFactForUser(bob, movieId, options(generator));
+
+    expect(forAlice).toMatchObject({ source: "generated", fact: { content: "Alice's fact." } });
+    expect(forBob).toMatchObject({ source: "generated", fact: { content: "Bob's fact." } });
+    expect(generator.calls).toHaveLength(2);
+  });
+
+  it("simultaneous requests by two users don't block each other: each generates its own fact", async () => {
+    const { alice, bob, movieId } = await aliceAndBobShareDune();
+    const generator = new FakeFactGenerator({ delayMs: 200 });
+
+    const [forAlice, forBob] = await Promise.all([
+      getFactForUser(alice, movieId, options(generator)),
+      getFactForUser(bob, movieId, options(generator)),
+    ]);
+
+    expect(forAlice.source).toBe("generated");
+    expect(forBob.source).toBe("generated");
+    expect(forAlice.fact.id).not.toBe(forBob.fact.id);
+    expect(generator.calls).toHaveLength(2);
+  });
+
+  it("windows are independent: Alice's expired window gives her a new fact while Bob keeps his cached one", async () => {
+    const { alice, bob, movieId } = await aliceAndBobShareDune();
+    await deliverAgo(alice, movieId, await createFactAgo(movieId, "Alice's old fact.", 120), 61);
+    const bobsFact = await createFactAgo(movieId, "Bob's recent fact.", 60);
+    await deliverAgo(bob, movieId, bobsFact, 30);
+    const generator = new FakeFactGenerator().respondWith(found("Alice's new fact."));
+
+    const forAlice = await getFactForUser(alice, movieId, options(generator));
+    const forBob = await getFactForUser(bob, movieId, options(generator));
+
+    expect(forAlice).toMatchObject({ source: "generated", fact: { content: "Alice's new fact." } });
+    expect(forBob).toMatchObject({ source: "cache", fact: { id: bobsFact } });
+    expect(generator.calls).toHaveLength(1);
+  });
+});
